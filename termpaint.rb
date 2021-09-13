@@ -206,4 +206,12 @@ module TermPaint
       end
     end
   end
+
+  class Root < Node
+    def initialize
+      columns = `tput columns`.chomp
+      lines = `tput lines`.chomp
+      super(0, 0, columns, lines)
+    end
+  end
 end
