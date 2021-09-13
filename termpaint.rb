@@ -281,6 +281,13 @@ if $0 == __FILE__
   root.repaint
   root.trap
   box = root.find_by_id(:box)
+  Thread.new do
+    400.times do |t|
+      box.x = (Math.sin(t.to_f / 20).abs * (root.width - box.width - 1)).to_i
+      root.repaint
+      sleep 0.1
+    end
+  end
   50.times do |t|
     box.text = "Width: #{root.width}\nHeight: #{root.height}\nTime: #{t}"
     sleep 1
