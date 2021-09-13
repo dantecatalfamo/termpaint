@@ -1,0 +1,17 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    pastel (0.8.0)
+      tty-color (~> 0.5)
+    tty-color (0.6.0)
+    tty-cursor (0.7.1)
+
+PLATFORMS
+  x86_64-linux
+
+DEPENDENCIES
+  pastel (~> 0.8.0)
+  tty-cursor (~> 0.7.1)
+
+BUNDLED WITH
+   2.2.25
