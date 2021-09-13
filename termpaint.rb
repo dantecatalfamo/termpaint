@@ -10,6 +10,8 @@ module TermPaint
     attr_accessor :id, :parent, :height, :width, :visible, :x, :y, :background_color, :text_color, :border_color,
                   :border_char
 
+    @@paint_lock = Mutex.new
+
     def initialize(x, y, width, height, position: :relative, border: true, background_color: nil, text_color: nil, border_color: nil, border_char: '█', id: nil)
       @x = x
       @y = y
@@ -134,9 +136,12 @@ module TermPaint
     def repaint
       return unless visible?
 
-      repaint_background
-      repaint_border
-      repaint_self
+      @@paint_lock.synchronize do
+        repaint_background
+        repaint_border
+        repaint_self
+      end
+
       repaint_children
     end
 
@@ -193,12 +198,18 @@ module TermPaint
 
   class TextBox < Node
     TAB_WIDTH = 2
-    attr_accessor :text, :scroll_y
+    attr_accessor :scroll_y
+    attr_reader :text
 
     def initialize(...)
       super
       @scroll_y = 0
       @text = ''
+    end
+
+    def text=(new_text)
+      @text = new_text
+      repaint
     end
 
     def text_lines
@@ -234,8 +245,13 @@ module TermPaint
     end
 
     def trap
-      self.width = cols
-      self.height = lines
+      Signal.trap('WINCH') do
+        Thread.new do # Not the greatest
+          self.width = cols
+          self.height = lines
+          repaint
+        end
+      end
     end
 
     def cols
@@ -263,15 +279,11 @@ end
 if $0 == __FILE__
   root << textbox
   root.repaint
-  print TTY::Cursor.move_to(10, 20)
+  root.trap
   box = root.find_by_id(:box)
-  Signal.trap('WINCH') do
-    root.trap
-    root.repaint
-  end
-  10.times do |t|
+  50.times do |t|
     box.text = "Width: #{root.width}\nHeight: #{root.height}\nTime: #{t}"
-    root.repaint
     sleep 1
   end
+  print TTY::Cursor.move_to(10, 20)
 end
