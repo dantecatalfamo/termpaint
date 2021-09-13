@@ -40,14 +40,19 @@ module TermPaint
   
   class Node
     attr_reader :children
-    attr_accessor :id, :parent, :x, :y, :height, :width
+    attr_accessor :id, :parent, :x, :y, :height, :width, :visible
 
     def initialize(x, y, width, height)
       @x = x
       @y = y
       @width = width
       @height = height
+      @visible = true
       yield self if block_given?
+    end
+
+    def visible?
+      !!@visible
     end
 
     def focusable?
@@ -59,6 +64,8 @@ module TermPaint
     end
 
     def repaint
+      return unless visible
+
       repaint_self
       repaint_children
     end
