@@ -184,6 +184,7 @@ module TermPaint
         ret = child.find_by_id(find_id)
         return ret if ret
       end
+      nil
     end
 
     def find_focussed
@@ -193,13 +194,13 @@ module TermPaint
         ret = child.find_focussed
         return ret if ret
       end
+      nil
     end
   end
 
   class TextBox < Node
     TAB_WIDTH = 2
-    attr_accessor :scroll_y
-    attr_reader :text
+    attr_reader :text, :scroll_y
 
     def initialize(...)
       super
@@ -209,6 +210,11 @@ module TermPaint
 
     def text=(new_text)
       @text = new_text
+      repaint
+    end
+
+    def scroll_y=(scroll)
+      @scroll_y = scroll
       repaint
     end
 
@@ -229,6 +235,8 @@ module TermPaint
 
     def repaint_self
       super
+      return if scroll_y > text_lines.length
+
       printer = create_painter
       text_lines[scroll_y..].each_with_index do |line, idx|
         break if idx >= inner_height
@@ -272,22 +280,37 @@ def textbox
   b
 end
 
+def long_textbox
+  b = TermPaint::TextBox.new(5, 8, 20, 9, id: :long, background_color: :white, text_color: :black)
+  b.text = "This is some long text right here. I'm not sure what to type here so I'm just going to keep going!\n" * 10
+  b
+end
+
 def root
   @root ||= TermPaint::Root.new
 end
 
 if $0 == __FILE__
   root << textbox
+  root << long_textbox
   root.repaint
   root.trap
   box = root.find_by_id(:box)
+  long = root.find_by_id(:long)
   Thread.new do
     400.times do |t|
-      box.x = (Math.sin(t.to_f / 20).abs * (root.width - box.width - 1)).to_i
+      long.x = (Math.sin(t.to_f / 20).abs * (root.width - long.width - 1)).to_i
       root.repaint
       sleep 0.1
     end
   end
+  Thread.new do
+    loop do
+      long.scroll_y += 1
+      sleep 0.3
+    end
+  end
+
   50.times do |t|
     box.text = "Width: #{root.width}\nHeight: #{root.height}\nTime: #{t}"
     sleep 1
