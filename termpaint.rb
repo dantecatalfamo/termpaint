@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 
 require 'tty-cursor'
+require 'tty-screen'
 require 'pastel'
 
 module TermPaint
@@ -30,7 +31,7 @@ module TermPaint
       return x + offset if parent.nil?
 
       if position == :relative
-        x + parent.x + offset
+        x + parent.x + parent.border + offset
       else
         x + offset
       end
@@ -40,7 +41,7 @@ module TermPaint
       return y + offset if parent.nil?
 
       if position == :relative
-        y + parent.y + offset
+        y + parent.y + parent.border + offset
       else
         y + offset
       end
@@ -63,7 +64,7 @@ module TermPaint
     end
 
     def cursor_to_inner(inner_x, inner_y)
-      TTY::Cursor.move_to(x + inner_x + border, y + inner_y + border)
+      TTY::Cursor.move_to(inner_to_global_x(inner_x), inner_to_global_y(inner_y))
     end
 
     def position=(new_position)
@@ -233,16 +234,16 @@ module TermPaint
     end
 
     def trap
-      width = cols
-      height = lines
+      self.width = cols
+      self.height = lines
     end
 
     def cols
-      `tput cols`.chomp.to_i
+      TTY::Screen.cols
     end
 
     def lines
-      `tput lines`.chomp.to_i
+      TTY::Screen.lines
     end
   end
 end
@@ -250,7 +251,7 @@ end
 # TESTING
 
 def textbox
-  b = TermPaint::TextBox.new(1, 1, 15, 10, id: :box)
+  b = TermPaint::TextBox.new(0, 1, 15, 10, id: :box, background_color: :green, border_color: :blue)
   b.text = "Hello! This is a textbox test.\nPlease edit this text if you want to :^)"
   b
 end
@@ -263,10 +264,14 @@ if $0 == __FILE__
   root << textbox
   root.repaint
   print TTY::Cursor.move_to(10, 20)
+  box = root.find_by_id(:box)
   Signal.trap('WINCH') do
+    root.trap
     root.repaint
-    box = root.find_by_id(:box)
-    box.text = root.width.to_s
   end
-  sleep 10
+  10.times do |t|
+    box.text = "Width: #{root.width}\nHeight: #{root.height}\nTime: #{t}"
+    root.repaint
+    sleep 1
+  end
 end
