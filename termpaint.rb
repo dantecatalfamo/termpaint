@@ -1,3 +1,5 @@
+#!/usr/bin/env ruby
+
 require 'tty-cursor'
 require 'pastel'
 
@@ -7,7 +9,7 @@ module TermPaint
     attr_accessor :id, :parent, :height, :width, :visible, :x, :y, :background_color, :text_color, :border_color,
                   :border_char
 
-    def initialize(x, y, width, height, position: :relative, border: true, background_color: nil, text_color: nil, border_color: nil, border_char: '█')
+    def initialize(x, y, width, height, position: :relative, border: true, background_color: nil, text_color: nil, border_color: nil, border_char: '█', id: nil)
       @x = x
       @y = y
       @width = width
@@ -20,6 +22,7 @@ module TermPaint
       @border_color = border_color
       @text_color = text_color
       @border_char = border_char
+      @id = id
       yield self if block_given?
     end
 
@@ -198,7 +201,7 @@ module TermPaint
     end
 
     def text_lines
-      lines = text.gsub("\t", ' ' * TAB_WIDTH).split("\n")
+      lines = text.to_s.gsub("\t", ' ' * TAB_WIDTH).split("\n")
       split_lines = []
       lines.each do |line|
         if line.length < inner_width
@@ -226,9 +229,20 @@ module TermPaint
 
   class Root < Node
     def initialize
-      columns = `tput cols`.chomp.to_i
-      lines = `tput lines`.chomp.to_i
-      super(0, 0, columns, lines)
+      super(0, 0, cols, lines, background_color: :black)
+    end
+
+    def trap
+      width = cols
+      height = lines
+    end
+
+    def cols
+      `tput cols`.chomp.to_i
+    end
+
+    def lines
+      `tput lines`.chomp.to_i
     end
   end
 end
@@ -236,7 +250,7 @@ end
 # TESTING
 
 def textbox
-  b = TermPaint::TextBox.new(1, 1, 15, 10)
+  b = TermPaint::TextBox.new(1, 1, 15, 10, id: :box)
   b.text = "Hello! This is a textbox test.\nPlease edit this text if you want to :^)"
   b
 end
@@ -249,4 +263,10 @@ if $0 == __FILE__
   root << textbox
   root.repaint
   print TTY::Cursor.move_to(10, 20)
+  Signal.trap('WINCH') do
+    root.repaint
+    box = root.find_by_id(:box)
+    box.text = root.width.to_s
+  end
+  sleep 10
 end
