@@ -2,19 +2,45 @@ require 'tty-cursor'
 require 'pastel'
 
 module TermPaint
-  module Border
-    attr_reader :border
+  class Node
+    attr_reader :children, :position, :border
+    attr_accessor :id, :parent, :height, :width, :visible, :x, :y, :background_color, :text_color, :border_color,
+                  :border_char
 
-    def self.included(base)
-      base.instance_variable_set('@border', true)
+    def initialize(x, y, width, height, position: :relative, border: true, background_color: nil, text_color: nil, border_color: nil, border_char: '█')
+      @x = x
+      @y = y
+      @width = width
+      @height = height
+      self.border = border
+      @visible = true
+      @children = []
+      @position = position
+      @background_color = background_color
+      @border_color = border_color
+      @text_color = text_color
+      @border_char = border_char
+      yield self if block_given?
     end
 
-    def border?
-      !border.zero?
+    def global_x(offset = 0)
+      return x + offset if parent.nil?
+
+      if position == :relative
+        x + parent.x + offset
+      else
+        x + offset
+      end
     end
 
-    def border=(val)
-      @border = val ? 1 : 0
+    def global_y(offset = 0)
+      return y + offset if parent.nil?
+
+      if position == :relative
+        y + parent.y + offset
+      else
+        y + offset
+      end
     end
 
     def inner_width
@@ -26,29 +52,28 @@ module TermPaint
     end
 
     def inner_to_global_x(inner_x)
-      x + inner_x + border
+      global_x + inner_x + border
     end
 
     def inner_to_global_y(inner_y)
-      y + inner_y + border
+      global_y + inner_y + border
     end
 
     def cursor_to_inner(inner_x, inner_y)
       TTY::Cursor.move_to(x + inner_x + border, y + inner_y + border)
     end
-  end
 
-  class Node
-    attr_reader :children
-    attr_accessor :id, :parent, :x, :y, :height, :width, :visible
+    def position=(new_position)
+      throw 'Illegal position value' unless %i[relative absolute].includes?(new_position)
+      @position = new_position
+    end
 
-    def initialize(x, y, width, height)
-      @x = x
-      @y = y
-      @width = width
-      @height = height
-      @visible = true
-      yield self if block_given?
+    def border?
+      !border.zero?
+    end
+
+    def border=(val)
+      @border = val ? 1 : 0
     end
 
     def visible?
@@ -63,16 +88,55 @@ module TermPaint
       throw 'Not implemented'
     end
 
-    def repaint
-      return unless visible
+    def create_painter
+      painter = Pastel.new
+      painter = painter.send(text_color) if text_color
+      painter = painter.send("on_#{background_color}") if background_color
+      painter.detach
+    end
 
+    def repaint_background
+      return if background_color.nil?
+
+      print TTY::Cursor.move_to(global_x, global_y)
+      painter = create_painter
+      spaces = ' ' * width
+      height.times do |h|
+        print painter.call(spaces)
+        print TTY::Cursor.move_to(global_x, global_y(h))
+      end
+    end
+
+    def repaint_border
+      return unless border?
+
+      throw 'Border character bust be 1 character long' unless border_char.size == 1
+
+      print TTY::Cursor.move_to(global_x, global_y)
+      painter = Pastel.new
+      painter = painter.send(border_color) if border_color
+      painter = painter.detach
+      print painter.call(border_char * width)
+      inner_height.times do |h|
+        print TTY::Cursor.move_to(global_x, global_y(h + 1))
+        print painter.call(border_char)
+        print TTY::Cursor.forward(inner_width)
+        print painter.call(border_char)
+      end
+      print TTY::Cursor.move_to(global_x, global_y(height - 1))
+      print painter.call(border_char * width)
+    end
+
+    def repaint
+      return unless visible?
+
+      repaint_background
+      repaint_border
       repaint_self
       repaint_children
     end
 
-    def repaint_self
-      throw 'Not implemented'
-    end
+    def repaint_self; end
 
     def changed?
       @changed
@@ -85,9 +149,7 @@ module TermPaint
     def repaint_children
       return if @children.nil?
 
-      @children.each do |child|
-        child.paint
-      end
+      @children.each(&:repaint)
     end
 
     def append_child(child)
@@ -96,22 +158,14 @@ module TermPaint
     end
     alias << append_child
 
-    def local_to_global_x(local_x)
-      x + local_x
+    def move_to(new_x, new_y)
+      @x = new_x
+      @y = new_y
     end
 
-    def local_to_global_y(local_y)
-      y + local_y
-    end
-
-    def move_to(x, y)
-      @x = x
-      @y = y
-    end
-
-    def resize_to(width, height)
-      @width = width
-      @height = height
+    def resize_to(new_width, new_height)
+      @width = new_width
+      @height = new_height
     end
 
     def find_by_id(find_id)
@@ -133,47 +187,7 @@ module TermPaint
     end
   end
 
-  module Focusable
-    def focusable?
-      true
-    end
-  end
-
-  class Box < Node
-    include Border
-    attr_accessor :background_color, :border_color, :border_char
-    attr_reader :pastel
-
-    def initialize(x, y, width, height, border: true, background_color: :black, border_color: :white, border_char: '#')
-      super(x, y, width, height)
-      @pastel = Pastel.new
-      self.border = border
-      @background_color = background_color
-      @border_color = border_color
-      @border_char = border_char
-    end
-
-    def repaint_self
-      throw 'No background color' if background_color.nil?
-      throw 'No border color' if border_color.nil?
-      throw 'Border char must be 1 character long' if border_char.size != 1
-
-      cursor = TTY::Cursor
-      print cursor.move_to(x, y)
-      printer = pastel.send("on_#{background_color}").send(border_color).detach
-      print printer.call(border_char * width) if border?
-      inner_height.times do |t|
-        print cursor.move_to(x, y + t + 1)
-        print printer.call(border_char) if border?
-        print printer.call(' ' * inner_width)
-        print printer.call(border_char) if border?
-      end
-      print cursor.move_to(x, y + height - 1) if border?
-      print printer.call(border_char * width) if border?
-    end
-  end
-
-  class TextBox < Box
+  class TextBox < Node
     TAB_WIDTH = 2
     attr_accessor :text, :scroll_y
 
@@ -200,7 +214,7 @@ module TermPaint
 
     def repaint_self
       super
-      printer = pastel.send("on_#{background_color}").detach
+      printer = create_painter
       text_lines[scroll_y..].each_with_index do |line, idx|
         break if idx >= inner_height
 
@@ -212,9 +226,27 @@ module TermPaint
 
   class Root < Node
     def initialize
-      columns = `tput columns`.chomp
-      lines = `tput lines`.chomp
+      columns = `tput cols`.chomp.to_i
+      lines = `tput lines`.chomp.to_i
       super(0, 0, columns, lines)
     end
   end
+end
+
+# TESTING
+
+def textbox
+  b = TermPaint::TextBox.new(1, 1, 15, 10)
+  b.text = "Hello! This is a textbox test.\nPlease edit this text if you want to :^)"
+  b
+end
+
+def root
+  @root ||= TermPaint::Root.new
+end
+
+if $0 == __FILE__
+  root << textbox
+  root.repaint
+  print TTY::Cursor.move_to(10, 20)
 end
